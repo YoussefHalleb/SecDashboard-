@@ -25,7 +25,7 @@ jobs:
             -v "$(pwd)":/zap/wrk \
             ghcr.io/zaproxy/zaproxy:stable \
             zap-full-scan.py \
-            -t http://wackopicko.com \
+            -t http://testfire.net \
             -x zap.xml \
             -r zap.html \
             -j \
@@ -78,9 +78,9 @@ jobs:
 
           data = {
               "scan_type": "ZAP Scan",
-              "product_name": "WackoPicko",
+              "product_name": "TestFire",
               "product_type_name": "Web Application",
-              "engagement_name": "WackoPicko ZAP Scan",
+              "engagement_name": "Testfire ZAP Scan",
               "auto_create_context": "true",
               "active": "true",
               "verified": "false",
