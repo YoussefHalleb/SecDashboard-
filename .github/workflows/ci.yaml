@@ -1,0 +1,79 @@
+name: URL Scan and Send to DefectDojo
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout le code
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      # 2. Installer Docker pour exécuter OWASP ZAP
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@v1
+
+      # 3. Télécharger et exécuter le conteneur OWASP ZAP pour scanner l'URL
+      - name: Run OWASP ZAP scan
+        run: |
+          docker pull owasp/zap2docker-stable
+          docker run -t owasp/zap2docker-stable zap-baseline.py -t http://wackopicko.com -r zap_report.html
+
+      # 4. Télécharger les résultats du scan (générés en HTML)
+      - name: Upload OWASP ZAP report
+        uses: actions/upload-artifact@v2
+        with:
+          name: zap-report
+          path: zap_report.html
+
+      # 5. Installer les dépendances pour envoyer les résultats à DefectDojo
+      - name: Install dependencies
+        run: |
+          pip install requests
+
+      # 6. Envoyer les résultats à DefectDojo via API
+      - name: Upload results to DefectDojo
+        run: |
+          python3 - <<EOF
+          import requests
+
+          DEFECTDOJO_URL = "${{ secrets.DEFECTDOJO_URL }}"
+          DEFECTDOJO_API_KEY = "${{ secrets.DEFECTDOJO_API_KEY }}"
+          
+          # Charger le fichier de rapport
+          with open("zap_report.html", "r") as file:
+              zap_report = file.read()
+
+          # API DefectDojo pour créer une vulnérabilité (par exemple, un test de type 'ZAP Scan')
+          url = f"{DEFECTDOJO_URL}/api/v2/import-scan/"
+          headers = {
+              "Authorization": f"Token {DEFECTDOJO_API_KEY}",
+              "Content-Type": "application/json",
+          }
+
+          # Données à envoyer (adapter selon vos besoins)
+          data = {
+              "scan_type": "ZAP Scan",
+              "file": zap_report,
+              "engagement": 1,  # ID d'engagement à définir selon votre projet DefectDojo
+              "tags": ["Zap Scan"],
+          }
+
+          # Envoyer les résultats
+          response = requests.post(url, headers=headers, json=data)
+          if response.status_code == 201:
+              print("Scan results successfully uploaded to DefectDojo!")
+          else:
+              print(f"Failed to upload scan results: {response.status_code}")
+          EOF
+        env:
+          DEFECTDOJO_URL: ${{ secrets.DEFECTDOJO_URL }}
+          DEFECTDOJO_API_KEY: ${{ secrets.DEFECTDOJO_API_KEY }}
