@@ -21,7 +21,12 @@ jobs:
       - name: Set up Docker
         uses: docker/setup-buildx-action@v1
 
-      # 3. Exécuter le scan OWASP ZAP avec l'URL cible
+      # 3. Créer le réseau Docker `zap-net`
+      - name: Create Docker Network zap-net
+        run: |
+          docker network create zap-net || true  # Cette commande crée le réseau ou ignore si le réseau existe déjà
+
+      # 4. Exécuter le scan OWASP ZAP avec l'URL cible
       - name: OWASP ZAP Full Scan
         run: |
           docker run --rm \
@@ -32,26 +37,36 @@ jobs:
             zap-full-scan.py \
             -t http://wackopicko.com \
             -x zap.xml \
-            -r zap.html \
+            -r zap_report.html \
             -j \
             -z "-config spider.maxDuration=5 \
               -config ajaxSpider.maxDuration=5 \
               -config scanner.attackStrength=MEDIUM \
               -config scanner.maxScanDurationInMins=10" || true
 
-      # 4. Télécharger les résultats du scan
+      # 5. Vérifier si le fichier zap_report.html existe avant de continuer
+      - name: Check if zap_report.html exists
+        run: |
+          if [ -f zap_report.html ]; then
+            echo "zap_report.html found!"
+          else
+            echo "zap_report.html not found!"
+            exit 1
+          fi
+
+      # 6. Télécharger les résultats du scan
       - name: Upload OWASP ZAP report
         uses: actions/upload-artifact@v4
         with:
           name: zap-report
           path: zap_report.html
 
-      # 5. Installer les dépendances pour envoyer les résultats à DefectDojo
+      # 7. Installer les dépendances pour envoyer les résultats à DefectDojo
       - name: Install dependencies
         run: |
           pip install requests
 
-      # 6. Envoyer les résultats à DefectDojo via API
+      # 8. Envoyer les résultats à DefectDojo via API
       - name: Upload results to DefectDojo
         run: |
           python3 - <<EOF
