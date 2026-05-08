@@ -79,6 +79,7 @@ jobs:
           data = {
               "scan_type": "ZAP Scan",
               "product_name": "WackoPicko",
+              "product_type_name": "Web Application",
               "engagement_name": "WackoPicko ZAP Scan",
               "auto_create_context": "true",
               "active": "true",
