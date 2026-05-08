@@ -17,17 +17,29 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v2
 
-      # 2. Installer Docker pour exécuter OWASP ZAP
+      # 2. Installer Docker
       - name: Set up Docker
         uses: docker/setup-buildx-action@v1
 
-      # 3. Télécharger et exécuter le conteneur OWASP ZAP pour scanner l'URL
-      - name: Run OWASP ZAP scan
+      # 3. Exécuter le scan OWASP ZAP avec l'URL cible
+      - name: OWASP ZAP Full Scan
         run: |
-          docker pull owasp/zap2docker-stable
-          docker run -t owasp/zap2docker-stable zap-baseline.py -t http://wackopicko.com -r zap_report.html
+          docker run --rm \
+            --user root \
+            --network zap-net \
+            -v "$(pwd)":/zap/wrk \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-full-scan.py \
+            -t http://wackopicko.com \
+            -x zap.xml \
+            -r zap.html \
+            -j \
+            -z "-config spider.maxDuration=5 \
+              -config ajaxSpider.maxDuration=5 \
+              -config scanner.attackStrength=MEDIUM \
+              -config scanner.maxScanDurationInMins=10" || true
 
-      # 4. Télécharger les résultats du scan (générés en HTML)
+      # 4. Télécharger les résultats du scan
       - name: Upload OWASP ZAP report
         uses: actions/upload-artifact@v4
         with:
