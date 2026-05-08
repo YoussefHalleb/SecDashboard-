@@ -2,31 +2,21 @@ name: URL Scan and Send to DefectDojo
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
-    branches:
-      - main
+    branches: [main]
 
 jobs:
   scan:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout le code
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
-      # 2. Installer Docker
-      - name: Set up Docker
-        uses: docker/setup-buildx-action@v1
+      - name: Create Docker Network
+        run: docker network create zap-net || true
 
-      # 3. Créer le réseau Docker `zap-net`
-      - name: Create Docker Network zap-net
-        run: |
-          docker network create zap-net || true  # Cette commande crée le réseau ou ignore si le réseau existe déjà
-
-      # 4. Exécuter le scan OWASP ZAP avec l'URL cible
       - name: OWASP ZAP Full Scan
         run: |
           docker run --rm \
@@ -37,89 +27,82 @@ jobs:
             zap-full-scan.py \
             -t http://wackopicko.com \
             -x zap.xml \
-            -r zap_report.html \
+            -r zap.html \
             -j \
             -z "-config spider.maxDuration=5 \
               -config ajaxSpider.maxDuration=5 \
               -config scanner.attackStrength=MEDIUM \
               -config scanner.maxScanDurationInMins=10" || true
 
-      # 5. Vérifier si le fichier zap_report.html existe avant de continuer
-      - name: Check if zap_report.html exists
+      - name: Check ZAP reports
         run: |
-          if [ -f zap_report.html ]; then
-            echo "zap_report.html found!"
-          else
-            echo "zap_report.html not found!"
+          ls -la
+          if [ ! -f zap.xml ]; then
+            echo "zap.xml not found"
+            exit 1
+          fi
+          if [ ! -f zap.html ]; then
+            echo "zap.html not found"
             exit 1
           fi
 
-      # 6. Télécharger les résultats du scan
-      - name: Upload OWASP ZAP report
+      - name: Upload ZAP reports as artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: zap-report
-          path: zap_report.html
+          name: zap-reports
+          path: |
+            zap.xml
+            zap.html
 
-      # 7. Installer les dépendances pour envoyer les résultats à DefectDojo
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
       - name: Install dependencies
-        run: |
-          pip install requests
+        run: pip install requests
 
-      # 8. Envoyer les résultats à DefectDojo via API
-      - name: Upload results to DefectDojo
+      - name: Upload ZAP results to DefectDojo
         run: |
-          python3 - <<EOF
+          python3 - <<'EOF'
+          import os
           import requests
-          import json
+          from datetime import date
 
-          DEFECTDOJO_URL = "${{ secrets.DEFECTDOJO_URL }}"
-          DEFECTDOJO_API_KEY = "${{ secrets.DEFECTDOJO_API_KEY }}"
-          
-          # Charger le fichier de rapport
-          with open("zap_report.html", "r") as file:
-              zap_report = file.read()
+          DEFECTDOJO_URL = os.environ["DEFECTDOJO_URL"].rstrip("/")
+          DEFECTDOJO_API_KEY = os.environ["DEFECTDOJO_API_KEY"]
 
-          # Créer un produit dans DefectDojo (nom du produit : "WackoPicko")
-          product_data = {
-              "name": "WackoPicko",
-              "description": "Security scan results for WackoPicko",
-              "prod_type": "Web Application",  # Ajoutez le type de produit ici
-          }
-
-          # Ajouter le produit à DefectDojo si nécessaire
-          product_url = f"{DEFECTDOJO_URL}/api/v2/products/"
           headers = {
               "Authorization": f"Token {DEFECTDOJO_API_KEY}",
-              "Content-Type": "application/json",
           }
 
-          # Envoi de la requête pour créer un produit
-          product_response = requests.post(product_url, headers=headers, json=product_data)
-          if product_response.status_code != 201:
-              print(f"Failed to create product: {product_response.status_code} - {product_response.text}")
-              exit(1)
-          
-          product = product_response.json()
-          product_id = product['id']
-
-          # Créer une vulnérabilité dans DefectDojo en utilisant le scan ZAP
-          finding_data = {
+          data = {
               "scan_type": "ZAP Scan",
-              "file": zap_report,  # Le rapport ZAP en HTML
-              "engagement": 1,  # ID d'engagement à définir selon votre projet DefectDojo
-              "tags": ["Zap Scan"],
-              "product": product_id,  # ID du produit WackoPicko
+              "product_name": "WackoPicko",
+              "engagement_name": "WackoPicko ZAP Scan",
+              "auto_create_context": "true",
+              "active": "true",
+              "verified": "false",
+              "scan_date": str(date.today()),
+              "minimum_severity": "Info",
           }
 
-          # API pour envoyer les résultats du scan
-          scan_url = f"{DEFECTDOJO_URL}/api/v2/import-scan/"
-          scan_response = requests.post(scan_url, headers=headers, json=finding_data)
+          with open("zap.xml", "rb") as f:
+              files = {"file": f}
 
-          if scan_response.status_code == 201:
-              print("Scan results successfully uploaded to DefectDojo!")
-          else:
-              print(f"Failed to upload scan results: {scan_response.status_code} - {scan_response.text}")
+              response = requests.post(
+                  f"{DEFECTDOJO_URL}/api/v2/import-scan/",
+                  headers=headers,
+                  data=data,
+                  files=files,
+                  timeout=60
+              )
+
+          print(response.status_code)
+          print(response.text)
+
+          if response.status_code not in [200, 201]:
+              exit(1)
           EOF
         env:
           DEFECTDOJO_URL: ${{ secrets.DEFECTDOJO_URL }}
