@@ -84,6 +84,7 @@ jobs:
           product_data = {
               "name": "WackoPicko",
               "description": "Security scan results for WackoPicko",
+              "prod_type": "Web Application",  # Ajoutez le type de produit ici
           }
 
           # Ajouter le produit à DefectDojo si nécessaire
